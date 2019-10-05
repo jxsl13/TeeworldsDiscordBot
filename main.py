@@ -159,9 +159,6 @@ def find_player(partial_nickname : str, players : List[Dict]) -> Dict:
 
     players_copy.sort(key=lambda player: iterative_levenshtein(partial_nickname.lower(), player['name'].lower()))
 
-    for p in players_copy:
-        print(p)
-
     for player in players_copy:
         name = player['name'].lower()
         if partial_nickname.lower() in name:
