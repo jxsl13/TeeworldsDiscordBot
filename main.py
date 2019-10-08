@@ -19,7 +19,7 @@ mutex = threading.Lock()
 server_infos = dict()
 all_players = []
 
-REFRESH_DELAY = 10.0
+REFRESH_DELAY = 1.0
 
 
 """
