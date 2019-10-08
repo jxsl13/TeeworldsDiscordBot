@@ -296,7 +296,12 @@ Commands:
                         clan_len = len(player['clan'])
                         player_type = "(bot)" if player['player'] >= 2 else ""
 
-                        line += "\n{:{name_align}{name_width}} {:{clan_align}{clan_width}} {player_type}".format(name, clan, name_align='<', name_width=2*20-name_len, clan_align='>', clan_width=2*20-clan_len, player_type=player_type)
+                        line += "\n{:<{name_width}} {:>{clan_width}} {player_type}".format(
+                            name, 
+                            clan, 
+                            name_width=2*20-name_len,  
+                            clan_width=2*20-clan_len, 
+                            player_type=player_type)
 
                         if len(answer) + len(line) > 2000:
                             await message.channel.send(answer)
