@@ -224,6 +224,7 @@ class TeeworldsDiscord(discord.Client):
 Commands:
 **!p[layer]** <player> -  Check whether a player is currently online
 **!o[nline]** <gametype> - Find all online servers with a specific gametype
+**!o[nline]p[players]** <gametype> - Show a list of servers and players playing a specific gametype.
 
             """)
         elif text.startswith("!player ") or text.startswith("!p "):
@@ -263,6 +264,48 @@ Commands:
                         answer = line
                     else:
                         answer += line
+
+            else:
+                answer = f"No online servers with gametype '{tokens[1]}' found!"
+
+            if len(answer) > 0:
+                await message.channel.send(answer)
+        
+        elif text.startswith("!onlineplayers ") or text.startswith("!op "):
+            tokens = text.split(" ", maxsplit=1)
+
+            if len(tokens) != 2:
+                return
+            
+            mutex.acquire()
+            servers = find_online_servers(tokens[1], server_infos)
+            mutex.release()
+
+            answer = ""
+
+            if len(servers) > 0:
+                line = ""
+
+                for server in servers:
+                    line = f"\n**{escape(server['name'])}** ({server['num_players']} Players)"
+                    
+                    for player in server['players']:
+                        name = escape(player['name'])
+                        name_len = len(player['name'])
+                        clan = escape(player['clan'])
+                        clan_len = len(player['clan'])
+
+                        line += "\n{:{name_align}{name_width}} {:{clan_align}{clan_width}}".format(name, clan, name_align='<', name_width=2*20-name_len, clan_align='>', clan_width=2*20-clan_len)
+
+                        if len(answer) + len(line) > 2000:
+                            await message.channel.send(answer)
+                            answer = line
+                            line = ""
+                        else:
+                            answer += line
+                            line = ""
+                    
+                    answer += "\n"
 
             else:
                 answer = f"No online servers with gametype '{tokens[1]}' found!"
