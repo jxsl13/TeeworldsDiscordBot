@@ -289,8 +289,8 @@ Commands:
                     answer = f"\n**{escape(server['name'])}** ({server['num_players']} Players)"
                     answer += "\n```"
                     for player in server['players']:
-                        name = escape(player['name'])
-                        clan = escape(player['clan'])
+                        name = player['name']
+                        clan = player['clan']
                         player_type = "(bot)" if player['player'] >= 2 else ""
                         answer += "\n{:<{name_width}}      {:>{clan_width}} {player_type}".format(
                             name, 
