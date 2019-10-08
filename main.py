@@ -224,7 +224,7 @@ class TeeworldsDiscord(discord.Client):
 Commands:
 **!p[layer]** <player> -  Check whether a player is currently online
 **!o[nline]** <gametype> - Find all online servers with a specific gametype
-**!o[nline]p[players]** <gametype> - Show a list of servers and players playing a specific gametype.
+**!o[nline]p[layers]** <gametype> - Show a list of servers and players playing a specific gametype.
 
             """)
         elif text.startswith("!player ") or text.startswith("!p "):
