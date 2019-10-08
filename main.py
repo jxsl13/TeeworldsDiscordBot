@@ -284,34 +284,24 @@ Commands:
             answer = ""
 
             if len(servers) > 0:
-                line = ""
 
                 for server in servers:
-                    line = f"\n**{escape(server['name'])}** ({server['num_players']} Players)"
-                    
+                    answer = f"\n**{escape(server['name'])}** ({server['num_players']} Players)"
+                    answer += "\n```"
                     for player in server['players']:
                         name = escape(player['name'])
-                        name_len = len(player['name'])
                         clan = escape(player['clan'])
-                        clan_len = len(player['clan'])
                         player_type = "(bot)" if player['player'] >= 2 else ""
-
-                        line += "\n{:<{name_width}} {:>{clan_width}} {player_type}".format(
+                        answer += "\n{:<{name_width}}      {:>{clan_width}} {player_type}".format(
                             name, 
                             clan, 
-                            name_width=2*20-name_len,  
-                            clan_width=2*20-clan_len, 
+                            name_width=16,  
+                            clan_width=12, 
                             player_type=player_type)
 
-                        if len(answer) + len(line) > 2000:
-                            await message.channel.send(answer)
-                            answer = line
-                            line = ""
-                        else:
-                            answer += line
-                            line = ""
-                    
-                    answer += "\n"
+                    answer += "```\n"  
+                    await message.channel.send(answer)
+                    answer = ""
 
             else:
                 answer = f"No online servers with gametype '{tokens[1]}' found!"
