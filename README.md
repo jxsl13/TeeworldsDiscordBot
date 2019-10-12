@@ -20,3 +20,8 @@ Add a new line:
 ```
 @reboot TeeworldsDiscordBot/./main.py
 ```
+
+Extract all unique IPs from your log files:
+```unix
+cat *.txt | grep -E -o "([0-9]{1,3}[\.]){3}[0-9]{1,3}" | sort | uniq > UNIQUE_IPs.txt
+```

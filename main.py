@@ -38,6 +38,8 @@ import sys
 # how long to wait before refreshing the player lists
 REFRESH_DELAY = 5.0
 
+ENABLE_MASS_VPN_CHECK = False
+
 
 """
 Basically, the updater updates the currently available servers, every REFRESH_DELAY seconds
@@ -285,6 +287,8 @@ class TeeworldsDiscord(discord.Client):
     def __init__(self):
         super().__init__()
         self.email = os.getenv("EMAIL")
+        self.apis = [API_GetIPIntel_Net(email, 0.95), API_IPHub(iphub_token), API_IP_Teoh_IO()]
+
 
 
     async def on_message(self, message):
@@ -387,46 +391,60 @@ Commands:
             if len(answer) > 0:
                 await message.channel.send(answer)
         elif text.startswith("!vpn "):
-
-            tokens = text.split(" ", maxsplit=1)
-            if len(tokens) != 2:
+            
+            tokens = text.split(" ")
+            if len(tokens) < 2:
                 return
 
-            ip = tokens[1].strip()
-            is_vpn = False
+            valid_ips = [x for x in tokens if is_valid_ip(x)]
 
-            # check if ip is in reserved networks
-            __ip = ipaddress.ip_address(ip)
-            for network in invalid_vpn_networks:
-                if __ip in network:
-                    await message.channel.send(f"The IP '{ip}' is part of a reserved IP range which should not be accessible to humans.")
-                    return
+            if len(valid_ips) == 0:
+                await message.channel.send("Invalid IP address(es) provided.")
+                return
+            
+            if not ENABLE_MASS_VPN_CHECK:
+                valid_ips = valid_ips[:1]
+
+            for ip in valid_ips:
+                is_vpn = False
+
+                # check if ip is in reserved networks
+                __ip = ipaddress.ip_address(ip)
+                for network in invalid_vpn_networks:
+                    if __ip in network:
+                        await message.channel.send(f"The IP '{ip}' is part of a reserved IP range which should not be accessible to humans.")
+                        return
 
 
-            if is_valid_ip(ip):
                 is_ip_known = True
                 mutex.acquire()
                 try:
                     is_vpn = ips[ip]
                 except KeyError:
-                   is_ip_known = False
+                    is_ip_known = False
                 mutex.release()
 
                 if not is_ip_known:
-                     # ip is unknown
-                    apis = [API_GetIPIntel_Net(email, 0.95), API_IPHub(iphub_token), API_IP_Teoh_IO()]
+                    log("vpn", f"Unknown IP: {ip}")
+                    # ip is unknown
                     
                     got_resonse = False
                     
                     # if one api says yes, we save the ip as vpn
-                    for api in apis:
+                    for idx, api in enumerate(self.apis):
+                        log("vpn", f"Checking API {idx +1}/{len(self.apis)}")
                         err, is_vpn = await api.is_vpn(ip)
                         if err:
+                            cooldown = api.get_remaining_cooldown()
+                            log("vpn", f"Skipping API {idx +1}/{len(self.apis)}")
+                            if cooldown > 0:
+                                log("cooldown", f"{cooldown} seconds left.")
                             continue
                         else:
                             got_resonse = True
 
                         if is_vpn:
+                            log("vpn", "Is a VPN!")
                             mutex.acquire()
                             ips[ip] = True
                             mutex.release()
@@ -434,26 +452,26 @@ Commands:
                     
 
                     if not got_resonse:
-                        await message.channel.send("Could not retrieve any data, please try this command another time.")
-                        return
+                        await message.channel.send(f"Could not retrieve any data for IP '{ip}', please try this command another time.")
+                        continue
                     elif not is_vpn:
                         # got response and none of th eapis said that the ip is a VPN
                         mutex.acquire()
+                        log("vpn", "Is not a VPN")
                         ips[ip] = False
                         mutex.release()
                     
-
-                    log("vpn", f"Unknown IP: {ip}")
                 else:
                     # known ip, do nothing, just send the message
                     log("vpn", f"Known IP: {ip}")
                 
                 # inform the player about whether the ip is a vpn or not
-                string = "" if is_vpn else "not"
+                string = "not"
+                if is_vpn:
+                    ip = f'**{ip}**'
+                    string = ""
+                
                 await message.channel.send(f"The IP '{ip}' is {string} a VPN")
-            else:
-                await message.channel.send("Invalid IP address provided.")
-
 
 
 def is_valid_ip(ip : str) -> bool:    
