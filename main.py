@@ -306,7 +306,7 @@ Commands:
 **!p[layer]** <player> -  Check whether a player is currently online
 **!o[nline]** <gametype> - Find all online servers with a specific gametype
 **!o[nline]p[layers]** <gametype> - Show a list of servers and players playing a specific gametype.
-**!vpn <IP> - check if a given IP is actually a player connected via VPN.
+**!vpn <IP> - check if a given IP is actually a player connected via VPN(this feature doesn't work on servers, PM the bot.).
 
             """)
         elif text.startswith("!player ") or text.startswith("!p "):
@@ -392,6 +392,10 @@ Commands:
                 await message.channel.send(answer)
         elif text.startswith("!vpn "):
             
+            if message.channel.type is not discord.ChannelType.private:
+                await message.channel.send("This feature is only available via PM. Please send a private message.")
+                return
+
             tokens = text.split(" ")
             if len(tokens) < 2:
                 return
