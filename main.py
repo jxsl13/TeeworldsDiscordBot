@@ -495,6 +495,10 @@ Commands:
             res = re.findall(ipv4_pattern, tokens[1])
             unique_ips = sorted(list(set(res)))
             
+            if len(unique_ips) == 0:
+                await message.channel.send("No IPs found!")
+                return
+
             answer = "!vpn"
             for ip in unique_ips:
                 answer = f"{answer} {ip}"
