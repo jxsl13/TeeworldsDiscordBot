@@ -1,32 +1,54 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
+# typing
 from typing import List, Tuple, Dict
+
+# logging
+from shared import log
+
+# delaying refresh with sleep
+import time
 
 # teeworlds api part
 import tw_api as tw
 import copy
-import time
-from datetime import datetime
+
+# vpn api classes
+from vpn_apis import API_GetIPIntel_Net, API_IPHub, API_IP_Teoh_IO
+
+# worker threads
 import threading
 
-# discord bot part
+# retrieving credentials from .env file
 import os
-import discord
-from discord.utils import escape_markdown as escape
 from dotenv import load_dotenv
 
-mutex = threading.Lock()
-server_infos = dict()
-all_players = []
+# discord bot part
+import discord
+from discord.utils import escape_markdown as escape
 
-REFRESH_DELAY = 1.0
+
+# validating VPN commands
+from validate_email import validate_email
+import ipaddress
+
+import sys
+
+
+# how long to wait before refreshing the player lists
+REFRESH_DELAY = 5.0
 
 
 """
-Basically, the updater updates the currently available servers, every 10 seconds
+Basically, the updater updates the currently available servers, every REFRESH_DELAY seconds
 And the discord bot handles the discord connection at the same time.
 
+The VPN checker can be used to check player IPs against multiple free online APIs,
+that provide such checks. In order not to hit the daily limits too fast, we save previously checked IPs
+
 """
+
+
 
 def get_master_servers() -> List[Tuple[str, int]]:
     master_servers = []
@@ -179,8 +201,15 @@ def find_online_servers(gametype : str, server_infos : Dict[Tuple[str, int], Dic
 
 
 class DataUpdater(threading.Thread):
-    def __init__(self):
+    def __init__(self, checked_ips_file='ips.txt'):
         self.running = False
+
+        # vpn chencking
+        self.ips_file = checked_ips_file
+        self.ip_count = 0
+        # init ips
+        self.read_ips()
+
         threading.Thread.__init__(self, target=self.run)
     
     def run(self):
@@ -188,6 +217,7 @@ class DataUpdater(threading.Thread):
         
         while self.running:
             self.step()
+            self.update_ips()
             time.sleep(REFRESH_DELAY)
 
             
@@ -203,15 +233,62 @@ class DataUpdater(threading.Thread):
             server_infos = servers
             all_players = get_players_info(server_infos)
 
-            now = datetime.now()
-            print("Update", now.strftime("%d.%m.%Y %H:%M:%S"), "Servers:", len(server_infos), "Players:", len(all_players))
+            log("teeworlds", f"Servers: {len(server_infos)} Players: {len(all_players)}")
             mutex.release()
+    
+    def read_ips(self):
+        if os.path.exists(self.ips_file):
+            global mutex, ips
+
+            tmp_dict = {}
+            with open(self.ips_file) as f:
+                for line in f:
+                    tokens = line.split(" ")
+                    key = tokens[0].strip()
+                    try:
+                        is_vpn = int(tokens[1])
+                    except:
+                        is_vpn = 0
+                    tmp_dict[key] = bool(is_vpn)
+            
+            mutex.acquire()
+            ips = tmp_dict
+            self.ip_count = len(ips)
+            mutex.release()
+            log("vpn", f"Loaded {self.ip_count} IPs.")
+
+
+    def update_ips(self):
+        global mutex, ips
+        lines = []
+
+        mutex.acquire()
+        something_changed = len(ips) > self.ip_count and len(ips) > 0
+        if something_changed:
+            for key, value in ips.items():
+                lines.append(f"{key} {int(value)}\n")
+            
+            self.ip_count = len(ips)
+        mutex.release()
+
+        if something_changed:
+            lines.sort()
+            log("vpn", f"Writing {len(lines)} IPs")
+            with open(self.ips_file, 'w') as f:    
+                f.writelines(lines)
+            log("vpn", f"Done writing IPs!")
+
 
 
 class TeeworldsDiscord(discord.Client):
 
+    def __init__(self):
+        super().__init__()
+        self.email = os.getenv("EMAIL")
+
+
     async def on_message(self, message):
-        global mutex, server_infos, all_players
+        global mutex, server_infos, all_players, ips, email, iphub_token, invalid_vpn_networks
 
 
         if message.author == self.user:
@@ -225,6 +302,7 @@ Commands:
 **!p[layer]** <player> -  Check whether a player is currently online
 **!o[nline]** <gametype> - Find all online servers with a specific gametype
 **!o[nline]p[layers]** <gametype> - Show a list of servers and players playing a specific gametype.
+**!vpn <IP> - check if a given IP is actually a player connected via VPN.
 
             """)
         elif text.startswith("!player ") or text.startswith("!p "):
@@ -308,21 +386,155 @@ Commands:
 
             if len(answer) > 0:
                 await message.channel.send(answer)
+        elif text.startswith("!vpn "):
+
+            tokens = text.split(" ", maxsplit=1)
+            if len(tokens) != 2:
+                return
+
+            ip = tokens[1].strip()
+            is_vpn = False
+
+            # check if ip is in reserved networks
+            __ip = ipaddress.ip_address(ip)
+            for network in invalid_vpn_networks:
+                if __ip in network:
+                    await message.channel.send(f"The IP '{ip}' is part of a reserved IP range which should not be accessible to humans.")
+                    return
+
+
+            if is_valid_ip(ip):
+                is_ip_known = True
+                mutex.acquire()
+                try:
+                    is_vpn = ips[ip]
+                except KeyError:
+                   is_ip_known = False
+                mutex.release()
+
+                if not is_ip_known:
+                     # ip is unknown
+                    apis = [API_GetIPIntel_Net(email, 0.95), API_IPHub(iphub_token), API_IP_Teoh_IO()]
+                    
+                    got_resonse = False
+                    
+                    # if one api says yes, we save the ip as vpn
+                    for api in apis:
+                        err, is_vpn = await api.is_vpn(ip)
+                        if err:
+                            continue
+                        else:
+                            got_resonse = True
+
+                        if is_vpn:
+                            mutex.acquire()
+                            ips[ip] = True
+                            mutex.release()
+                            break
+                    
+
+                    if not got_resonse:
+                        await message.channel.send("Could not retrieve any data, please try this command another time.")
+                        return
+                    elif not is_vpn:
+                        # got response and none of th eapis said that the ip is a VPN
+                        mutex.acquire()
+                        ips[ip] = False
+                        mutex.release()
+                    
+
+                    log("vpn", f"Unknown IP: {ip}")
+                else:
+                    # known ip, do nothing, just send the message
+                    log("vpn", f"Known IP: {ip}")
+                
+                # inform the player about whether the ip is a vpn or not
+                string = "" if is_vpn else "not"
+                await message.channel.send(f"The IP '{ip}' is {string} a VPN")
+            else:
+                await message.channel.send("Invalid IP address provided.")
+
+
+
+def is_valid_ip(ip : str) -> bool:    
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except:
+        return False
+
+def fill_invaild_networks(networks: List[str]):
+    res = []
+    for n in networks:
+        res.append(ipaddress.ip_network(n))
+    return res
+
 
 
 
 if __name__ == "__main__":
 
-    # DISCORD credentials
+    # credentials
     load_dotenv()
-    token = os.getenv('DISCORD_TOKEN')
+    discord_token = os.getenv('DISCORD_TOKEN')
+    email = os.getenv('EMAIL')
+    iphub_token = os.getenv('IPHUB_TOKEN')
+
+    is_valid = validate_email(email)
+    if not is_valid:
+        log("FATAL", "Passed email is not valid, please use a non made up email address")
+        sys.exit(1)
+
+    # initialize global variables
+    mutex = threading.Lock()
+    server_infos = dict()
+    all_players = []
+    ips = dict()
+
+    # https://en.wikipedia.org/wiki/Reserved_IP_addresses
+    invalid_vpn_networks = fill_invaild_networks([
+        "0.0.0.0/8",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.0.0.0/24",
+        "192.0.2.0/24",
+        "192.88.99.0/24",
+        "192.168.0.0/16",
+        "198.18.0.0/15",
+        "198.51.100.0/24",
+        "203.0.113.0/24",
+        "224.0.0.0/4",
+        "240.0.0.0/4",
+        "255.255.255.255/32",
+        "::/0",
+        "::/128",
+        "::1/128",
+        "::ffff:0:0/96",
+        "::ffff:0:0:0/96",
+        "64:ff9b::/96",
+        "100::/64",
+        "2001::/32",
+        "2001:20::/28",
+        "2001:db8::/32",
+        "2002::/16",
+        "fc00::/7",
+        "fe80::/10",
+        "ff00::/8",
+    ])
 
     # tw api getting data drom master servers & servers
     # started in different thread
+    # and vpn data saver
     updater = DataUpdater()
     updater.start()
 
     
     # started in main thread
     discord_bot = TeeworldsDiscord()
-    discord_bot.run(token)
+    discord_bot.run(discord_token)
+
+    
+
