@@ -31,6 +31,7 @@ from discord.utils import escape_markdown as escape
 # validating VPN commands
 from validate_email import validate_email
 import ipaddress
+import re
 
 import sys
 
@@ -307,6 +308,7 @@ Commands:
 **!o[nline]** <gametype> - Find all online servers with a specific gametype
 **!o[nline]p[layers]** <gametype> - Show a list of servers and players playing a specific gametype.
 **!vpn** <IP> - check if a given IP is actually a player connected via VPN(this feature doesn't work on servers, PM the bot.).
+**!ip_filter** <text> - given a random text, the bot will return all unique IPs of that text.
 
             """)
         elif text.startswith("!player ") or text.startswith("!p "):
@@ -407,7 +409,9 @@ Commands:
                 return
             
             if not ENABLE_MASS_VPN_CHECK:
-                valid_ips = valid_ips[:1]
+                if len(valid_ips) >= 16:
+                    valid_ips = valid_ips[:16]
+                                    
 
             for ip in valid_ips:
                 is_vpn = False
@@ -476,6 +480,26 @@ Commands:
                     string = ""
                 
                 await message.channel.send(f"The IP '{ip}' is {string} a VPN")
+        elif text.startswith("!ip_filter "):
+            
+            if message.channel.type is not discord.ChannelType.private:
+                await message.channel.send("This feature is only available via PM. Please send a private message.")
+                return
+
+            tokens = text.split(" ", maxsplit=1)
+
+            if len(tokens) < 2:
+                return
+            
+            ipv4_pattern = r"(?:(?:1\d\d|2[0-5][0-5]|2[0-4]\d|0?[1-9]\d|0?0?\d)\.){3}(?:1\d\d|2[0-5][0-5]|2[0-4]\d|0?[1-9]\d|0?0?\d)"
+            res = re.findall(ipv4_pattern, tokens[1])
+            unique_ips = sorted(list(set(res)))
+            
+            answer = "!vpn"
+            for ip in unique_ips:
+                answer = f"{answer} {ip}"
+            
+            await message.channel.send(answer)
 
 
 def is_valid_ip(ip : str) -> bool:    
